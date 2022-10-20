@@ -1,9 +1,11 @@
+mod api;
 mod auth;
 
-use auth::AccountId;
-use axum::{extract::Extension, response::IntoResponse, routing::get, Json, Router};
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use axum::{extract::Extension, Router};
+use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
+
+use api::get_api_router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,11 +16,9 @@ async fn main() -> anyhow::Result<()> {
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
-    let api_router = Router::new()
-        .route("/todos", get(get_todos))
+    let app = Router::new()
+        .nest("/api", get_api_router())
         .layer(Extension(pg_pool));
-
-    let app = Router::new().nest("/api", api_router);
 
     let port = std::env::var("EVE_SERVER_PORT")
         .unwrap_or_else(|_| "8081".to_string())
@@ -30,23 +30,4 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
 
     Ok(())
-}
-
-async fn get_todos(
-    AccountId(_account_id): AccountId,
-    Extension(pg_pool): Extension<PgPool>,
-) -> impl IntoResponse {
-    let todos = sqlx::query!(
-        "
-        SELECT * FROM todo
-        "
-    )
-    .fetch_all(&pg_pool)
-    .await
-    .unwrap()
-    .into_iter()
-    .map(|record| record.title)
-    .collect::<Vec<_>>();
-
-    Json(todos)
 }
