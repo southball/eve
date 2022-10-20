@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:15
+    container_name: eve-postgres
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRESQL_ROOT_PASSWORD}
+    ports:
+      - 5432:5432
+    volumes:
+      - postgresql-volume:/var/lib/postgresql/data
+
+  storage:
+    image: quay.io/minio/minio:latest
+    container_name: eve-minio 
+    environment:
+      MINIO_ROOT_USER: root
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server --console-address ":9001" /data
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - minio-volume:/data
+
+volumes:
+  postgresql-volume:
+  minio-volume:
