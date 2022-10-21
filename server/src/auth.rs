@@ -6,7 +6,9 @@ use axum::{
 };
 use sqlx::PgPool;
 
-pub struct AccountId(pub i64);
+use crate::session::Session;
+
+pub struct AccountId(pub i32);
 
 #[async_trait]
 impl<B> FromRequest<B> for AccountId
@@ -25,12 +27,14 @@ where
             )
         })?;
 
+        let session = Session::from_request(req).await?;
+
         if let Some(_authorization) = req.headers().get(header::AUTHORIZATION) {
             // TODO: implement extraction from token
             Ok(AccountId(0))
-        } else if let Some(_cookies) = req.headers().get(header::COOKIE) {
+        } else if let Some(account_id) = session.get().account_id {
             // TODO: implement extraction from cookie
-            Ok(AccountId(0))
+            Ok(AccountId(account_id))
         } else {
             Err((StatusCode::UNAUTHORIZED, "Not authorized."))
         }

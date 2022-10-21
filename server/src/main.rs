@@ -1,9 +1,11 @@
 mod api;
 mod auth;
+mod session;
 
 use axum::{extract::Extension, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
+use tower_cookies::CookieManagerLayer;
 
 use api::get_api_router;
 
@@ -18,7 +20,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api", get_api_router())
-        .layer(Extension(pg_pool));
+        .layer(Extension(pg_pool))
+        .layer(CookieManagerLayer::new());
 
     let port = std::env::var("EVE_SERVER_PORT")
         .unwrap_or_else(|_| "8081".to_string())
