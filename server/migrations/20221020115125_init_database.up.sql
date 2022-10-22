@@ -29,13 +29,11 @@ CREATE TABLE todo (
 CREATE INDEX todo_by_account_id ON todo (account_id);
 
 CREATE TABLE todo_file (
-    id BIGSERIAL,
-    revision INTEGER DEFAULT 0,
+    id BIGSERIAL PRIMARY KEY,
     todo_id BIGINT NOT NULL REFERENCES todo(id) ON DELETE CASCADE,
     original_filename TEXT NOT NULL,
     memo TEXT NOT NULL DEFAULT '',
-    file_accessor TEXT NOT NULL,
-    PRIMARY KEY (id, revision)
+    file_accessor TEXT NOT NULL
 );
 
 CREATE INDEX todo_file_by_todo_id ON todo_file (todo_id);
@@ -50,7 +48,7 @@ CREATE INDEX tag_by_account_id ON tag(account_id);
 
 CREATE TABLE todo_tag (
     todo_id BIGINT REFERENCES todo(id) ON DELETE CASCADE,
-    tag_id BIGINT REFERENCES tag(id) ON DELETE CASCADE 
+    tag_id BIGINT REFERENCES tag(id) ON DELETE CASCADE
 );
 
 CREATE INDEX todo_tag_by_todo_id ON todo_tag(todo_id);

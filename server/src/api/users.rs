@@ -1,5 +1,5 @@
-use super::ErrorResponse;
-use axum::{extract::Extension, http::StatusCode, response::IntoResponse, Json};
+use super::{APIResponse, ErrorResponse};
+use axum::{extract::Extension, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPool;
 
@@ -18,7 +18,7 @@ pub async fn post_login(
     Extension(pg_pool): Extension<PgPool>,
     Json(req): Json<LoginRequest>,
     mut session: Session,
-) -> impl IntoResponse {
+) -> APIResponse<()> {
     let account_row = sqlx::query!(
         "
             SELECT * FROM account
@@ -30,7 +30,10 @@ pub async fn post_login(
     .await
     .unwrap();
 
-    let failed_response = (StatusCode::UNAUTHORIZED, "Wrong username or password.");
+    let failed_response = Err(ErrorResponse::from(
+        StatusCode::UNAUTHORIZED,
+        "Invalid username or password.",
+    ));
 
     match account_row {
         None => failed_response,
@@ -44,13 +47,13 @@ pub async fn post_login(
                 })
                 .await
                 .unwrap();
-            (StatusCode::OK, "Logged in.")
+            Ok(().into())
         }
     }
 }
 
 #[derive(Serialize)]
-struct PublicUser {
+pub struct PublicUser {
     username: String,
     display_name: String,
 }
@@ -63,12 +66,10 @@ struct GetUserResponse {
 pub async fn get_user(
     account_id: Option<AccountId>,
     Extension(pg_pool): Extension<PgPool>,
-) -> impl IntoResponse {
-    let empty_response = Ok(Json(GetUserResponse { user: None }));
-
+) -> APIResponse<Option<PublicUser>> {
     let account_id = match account_id {
         Some(AccountId(account_id)) => account_id,
-        None => return empty_response,
+        None => return Ok(None.into()),
     };
 
     sqlx::query!(
@@ -81,25 +82,24 @@ pub async fn get_user(
     .fetch_optional(&pg_pool)
     .await
     .map_err(|_| {
-        (
+        ErrorResponse::from(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::from("Failed to fetch from database.")),
+            "Failed to fetch from database.",
         )
     })
     .and_then(|result| match result {
         Some(result) => Ok(result),
-        None => Err((
+        None => Err(ErrorResponse::from(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::from("Invalid account.")),
+            "Invalid account.",
         )),
     })
     .map(|user| {
-        Json(GetUserResponse {
-            user: Some(PublicUser {
-                username: user.username,
-                display_name: user.display_name,
-            }),
+        Some(PublicUser {
+            username: user.username,
+            display_name: user.display_name,
         })
+        .into()
     })
 }
 
@@ -110,33 +110,88 @@ pub struct CreateUserRequest {
     password: String,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateUserRequest {
+    username: Option<String>,
+    display_name: Option<String>,
+    password: Option<String>,
+}
+
 const BCRYPT_COST: u32 = 10;
 
 pub async fn post_users(
     Extension(pg_pool): Extension<PgPool>,
     Json(req): Json<CreateUserRequest>,
-) -> impl IntoResponse {
+) -> APIResponse<PublicUser> {
     let hash_result = bcrypt::hash(req.password, BCRYPT_COST).unwrap();
     let same_username_result = sqlx::query!(
         "SELECT * FROM account WHERE username = $1 LIMIT 1",
         &req.username
     )
-    .fetch_all(&pg_pool)
+    .fetch_optional(&pg_pool)
     .await
-    .unwrap();
-    if !same_username_result.is_empty() {
-        return (StatusCode::BAD_REQUEST, "Username is already used.");
+    .map_err(|_err| {
+        ErrorResponse::from(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to check duplicate users.",
+        )
+    })?;
+    if same_username_result.is_some() {
+        return Err(ErrorResponse::from(
+            StatusCode::BAD_REQUEST,
+            "Username is already used.",
+        ));
     }
-    let _create_user_result = sqlx::query!(
+    let created_user = sqlx::query!(
         "
-                INSERT INTO account (username, display_name, password_hash_and_salt)
-                VALUES ($1, $2, $3)
-            ",
+            INSERT INTO account (username, display_name, password_hash_and_salt)
+            VALUES ($1, $2, $3)
+            RETURNING *
+        ",
         &req.username,
         req.display_name.as_ref().unwrap_or(&req.username),
         &hash_result
     )
-    .execute(&pg_pool)
-    .await;
-    (StatusCode::OK, "User is created.")
+    .fetch_one(&pg_pool)
+    .await
+    .map_err(|_err| ErrorResponse::from(StatusCode::BAD_REQUEST, "Failed to create user."))?;
+    Ok(PublicUser {
+        username: created_user.username,
+        display_name: created_user.display_name,
+    }
+    .into())
+}
+
+pub async fn post_user(
+    AccountId(account_id): AccountId,
+    Extension(pg_pool): Extension<PgPool>,
+    Json(req): Json<UpdateUserRequest>,
+) -> APIResponse<PublicUser> {
+    let password_hash_and_salt = req
+        .password
+        .map(|password| bcrypt::hash(password, BCRYPT_COST).unwrap());
+
+    let updated_user = sqlx::query!(
+        "
+            UPDATE account
+            SET username = COALESCE($2, username),
+                display_name = COALESCE($3, display_name),
+                password_hash_and_salt = COALESCE($4, password_hash_and_salt)
+            WHERE id = $1
+            RETURNING *
+        ",
+        account_id,
+        req.username,
+        req.display_name,
+        password_hash_and_salt
+    )
+    .fetch_one(&pg_pool)
+    .await
+    .map_err(|_err| ErrorResponse::from(StatusCode::BAD_REQUEST, "Failed to update user."))?;
+
+    Ok(PublicUser {
+        username: updated_user.username,
+        display_name: updated_user.display_name,
+    }
+    .into())
 }

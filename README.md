@@ -5,6 +5,16 @@
 Some environment variables are needed for the development of the application.
 To set up, copy `.envrc.sample` to `.envrc` and edit the variables.
 
+## Database schema
+
+Run:
+
+```sh
+docker run -v "$PWD/schema:/output" --net="host" schemaspy/schemaspy:snapshot -t pgsql -host localhost:5432 -db eve -u postgres -p ${POSTGRESQL_ROOT_PASSWORD}
+```
+
+to generate schema and ER digram in `./schema`.
+
 ## Server
 
 Make sure `sqlx-cli` is available by `cargo install sqlx-cli`.
