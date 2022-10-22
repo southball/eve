@@ -31,9 +31,8 @@ where
 
         if let Some(_authorization) = req.headers().get(header::AUTHORIZATION) {
             // TODO: implement extraction from token
-            Ok(AccountId(0))
+            Err((StatusCode::UNAUTHORIZED, "Not authorized."))
         } else if let Some(account_id) = session.get().account_id {
-            // TODO: implement extraction from cookie
             Ok(AccountId(account_id))
         } else {
             Err((StatusCode::UNAUTHORIZED, "Not authorized."))

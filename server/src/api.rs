@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPool;
 
 use crate::{
@@ -140,11 +140,71 @@ pub async fn post_todo(
     unimplemented!()
 }
 
+#[derive(Serialize)]
+struct PublicUser {
+    username: String,
+    display_name: String,
+}
+
+#[derive(Serialize)]
+struct GetUserResponse {
+    user: Option<PublicUser>,
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error_message: String,
+}
+
+impl From<&str> for ErrorResponse {
+    fn from(error_message: &str) -> Self {
+        ErrorResponse {
+            error_message: error_message.to_owned(),
+        }
+    }
+}
+
 pub async fn get_user(
-    AccountId(_account_id): AccountId,
-    Extension(_pg_pool): Extension<PgPool>,
+    account_id: Option<AccountId>,
+    Extension(pg_pool): Extension<PgPool>,
 ) -> impl IntoResponse {
-    unimplemented!()
+    let empty_response = Ok(Json(GetUserResponse { user: None }));
+
+    let account_id = match account_id {
+        Some(AccountId(account_id)) => account_id,
+        None => return empty_response,
+    };
+
+    sqlx::query!(
+        "
+            SELECT username, display_name FROM account
+            WHERE id = $1
+        ",
+        &account_id
+    )
+    .fetch_optional(&pg_pool)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::from("Failed to fetch from database.")),
+        )
+    })
+    .and_then(|result| match result {
+        Some(result) => Ok(result),
+        None => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::from("Invalid account.")),
+        )),
+    })
+    .map(|user| {
+        Json(GetUserResponse {
+            user: Some(PublicUser {
+                username: user.username,
+                display_name: user.display_name,
+            }),
+        })
+    })
 }
 
 #[derive(Deserialize)]
