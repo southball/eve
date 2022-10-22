@@ -1,5 +1,7 @@
 # eve
 
+![Eve, by Stable Diffusion](eve.png)
+
 ## dotenv
 
 Some environment variables are needed for the development of the application.
